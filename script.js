@@ -1,15 +1,15 @@
 // script.js
 
+// Inicialización de Supabase
 const supabaseUrl = 'https://xeepwtquaoybjphenqnm.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlZXB3dHF1YW95YmpwaGVucWnmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ4MTIwMDAsImV4cCI6MjA2MDM4ODAwMH0.qVoGbf6P3_J_mOmdKm5tJzPYeL8Bbo_k8srSLSTStmI';
-
 const supabase = supabase.createClient(supabaseUrl, supabaseAnonKey);
 
 console.log('Cliente de Supabase inicializado:', supabase);
 
 // Obtener elementos del DOM
 const formularioSesion = document.getElementById('formularioSesion');
-const listaSesionesTbody = document.getElementById('listaSesiones').getElementsByTagName('tbody')[0]; // Corrección: Usar tbody
+const listaSesiones = document.getElementById('listaSesiones').getElementsByTagName('tbody')[0];
 const modalEditar = document.getElementById('modalEditar');
 const modalEliminar = document.getElementById('modalEliminar');
 const modalEliminarTodas = document.getElementById('modalEliminarTodas');
@@ -19,7 +19,7 @@ const cancelarEliminar = document.getElementById('cancelarEliminar');
 const confirmarEliminarTodas = document.getElementById('confirmarEliminarTodas');
 const cancelarEliminarTodas = document.getElementById('cancelarEliminarTodas');
 const eliminarTodasSesiones = document.getElementById('eliminarTodasSesiones');
-const tipoSesionSelect = document.getElementById('tipoSesion'); // Corrección: Usar el select para obtener el valor
+const tipoSesion = document.getElementById('tipoSesion');
 const camposStock = document.getElementById('camposStock');
 const camposCorporativa = document.getElementById('camposCorporativa');
 
@@ -38,9 +38,9 @@ function ocultarModal(modal) {
 }
 
 function actualizarListaSesiones() {
-    listaSesionesTbody.innerHTML = ''; // Corrección: Usar listaSesionesTbody
+    listaSesiones.innerHTML = '';
     sesiones.forEach((sesion, index) => {
-        const fila = listaSesionesTbody.insertRow(); // Corrección: Usar listaSesionesTbody
+        const fila = listaSesiones.insertRow();
         fila.innerHTML = `
             <td class="${sesion.tipoSesion}">${sesion.tipoSesion}</td>
             <td>${sesion.titulo}</td>
@@ -49,18 +49,18 @@ function actualizarListaSesiones() {
             <td>${sesion.modelo || sesion.responsable || ''}</td>
             <td>${sesion.horasTrabajadas || sesion.presupuesto || ''}</td>
             <td class="acciones">
-                <button class="editar" data-index="${index}">Editar</button>
-                <button class="eliminar" data-index="${index}">Eliminar</button>
+                <button class="editar" data-index="${index}"></button>
+                <button class="eliminar" data-index="${index}"></button>
             </td>
         `;
     });
 }
 
 function actualizarCamposSesion() {
-    if (tipoSesionSelect.value === 'stock') { // Corrección: Usar tipoSesionSelect.value
+    if (tipoSesion.value === 'stock') {
         camposStock.style.display = 'block';
         camposCorporativa.style.display = 'none';
-    } else if (tipoSesionSelect.value === 'corporativa') { // Corrección: Usar tipoSesionSelect.value
+    } else if (tipoSesion.value === 'corporativa') {
         camposStock.style.display = 'none';
         camposCorporativa.style.display = 'block';
     } else {
@@ -69,62 +69,108 @@ function actualizarCamposSesion() {
     }
 }
 
-async function cargarSesiones() {
+async function cargarSesionesDesdeSupabase() {
     const { data, error } = await supabase
         .from('sesiones_fotograficas')
         .select('*')
-        .order('fecha', { ascending: false }); // Ordenar por fecha descendente para mostrar lo último primero
+        .order('fecha', { ascending: false });
 
     if (error) {
         console.error('Error al cargar las sesiones desde Supabase:', error);
-        return;
-    }
-
-    if (data) {
+        // Aquí podrías añadir una lógica de respaldo para cargar desde localStorage si lo deseas
+    } else if (data) {
         sesiones = data;
         actualizarListaSesiones();
     }
 }
 
+async function guardarSesionEnSupabase(nuevaSesion) {
+    const { data, error } = await supabase
+        .from('sesiones_fotograficas')
+        .insert([nuevaSesion])
+        .select();
+
+    if (error) {
+        console.error('Error al guardar la sesión en Supabase:', error);
+        return null; // Indica que hubo un error
+    } else if (data && data.length > 0) {
+        return data[0]; // Devuelve la nueva sesión con su ID de Supabase
+    }
+    return null; // No se devolvieron datos
+}
+
+async function actualizarSesionEnSupabase(id, updates) {
+    const { error } = await supabase
+        .from('sesiones_fotograficas')
+        .update(updates)
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error al actualizar la sesión en Supabase:', error);
+        return false;
+    }
+    return true;
+}
+
+async function eliminarSesionDeSupabase(id) {
+    const { error } = await supabase
+        .from('sesiones_fotograficas')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error al eliminar la sesión de Supabase:', error);
+        return false;
+    }
+    return true;
+}
+
+async function eliminarTodasLasSesionesDeSupabase() {
+    const { error } = await supabase
+        .from('sesiones_fotograficas')
+        .delete()
+        .neq('id', 0); // Elimina todas las filas donde el ID no es 0 (asumiendo que los IDs son positivos)
+
+    if (error) {
+        console.error('Error al eliminar todas las sesiones de Supabase:', error);
+        return false;
+    }
+    return true;
+}
+
 // Event listeners
 formularioSesion.addEventListener('submit', async (evento) => {
     evento.preventDefault();
-    const tipoSesionValue = tipoSesionSelect.value; // Corrección: Usar tipoSesionSelect.value
+    const tipoSesionValue = tipoSesion.value;
     const tituloValue = document.getElementById('titulo').value;
     const fechaValue = document.getElementById('fecha').value;
     const localizacionValue = document.getElementById('localizacion').value;
     const modeloValue = document.getElementById('modelo')?.value || null;
     const responsableValue = document.getElementById('responsable')?.value || null;
-    const horasTrabajadasValue = document.getElementById('horasTrabajadas')?.value ? parseInt(document.getElementById('horasTrabajadas').value) : null; // Asegurar que sea número
-    const presupuestoValue = document.getElementById('presupuesto')?.value ? parseFloat(document.getElementById('presupuesto').value) : null; // Asegurar que sea número
+    const horasTrabajadasValue = document.getElementById('horasTrabajadas')?.value ? parseInt(document.getElementById('horasTrabajadas').value) : null;
+    const presupuestoValue = document.getElementById('presupuesto')?.value ? parseFloat(document.getElementById('presupuesto').value) : null;
 
-    const { data, error } = await supabase
-        .from('sesiones_fotograficas')
-        .insert([
-            {
-                tipoSesion: tipoSesionValue,
-                titulo: tituloValue,
-                fecha: fechaValue,
-                localizacion: localizacionValue,
-                modelo: modeloValue,
-                responsable: responsableValue,
-                horasTrabajadas: horasTrabajadasValue,
-                presupuesto: presupuestoValue,
-            },
-        ])
-        .select(); // Para obtener la nueva sesión insertada
+    const nuevaSesion = {
+        tipoSesion: tipoSesionValue,
+        titulo: tituloValue,
+        fecha: fechaValue,
+        localizacion: localizacionValue,
+        modelo: modeloValue,
+        responsable: responsableValue,
+        horasTrabajadas: horasTrabajadasValue,
+        presupuesto: presupuestoValue
+    };
 
-    if (error) {
-        console.error('Error al guardar la sesión en Supabase:', error);
-    } else if (data && data.length > 0) {
-        sesiones = [...sesiones, data[0]]; // Añadir la nueva sesión al array local
+    const sesionGuardada = await guardarSesionEnSupabase(nuevaSesion);
+    if (sesionGuardada) {
+        sesiones.push(sesionGuardada);
         actualizarListaSesiones();
         formularioSesion.reset();
         actualizarCamposSesion();
     }
 });
 
-listaSesionesTbody.addEventListener('click', (evento) => { // Corrección: Usar listaSesionesTbody
+listaSesiones.addEventListener('click', (evento) => {
     const botonEditar = evento.target.closest('.editar');
     const botonEliminar = evento.target.closest('.eliminar');
 
@@ -146,7 +192,6 @@ listaSesionesTbody.addEventListener('click', (evento) => { // Corrección: Usar 
             editarHorasTrabajadasInput.value = sesionAEditar.horasTrabajadas || '';
             editarPresupuestoInput.value = sesionAEditar.presupuesto || '';
         }
-
         mostrarModal(modalEditar);
     } else if (botonEliminar) {
         const index = botonEliminar.dataset.index;
@@ -170,41 +215,27 @@ formularioEditar.addEventListener('submit', async (evento) => {
             titulo: tituloValue,
             fecha: fechaValue,
             localizacion: localizacionValue,
+            ...(sesionAEditar.tipoSesion === 'stock' && { modelo: modeloValue }),
+            ...(sesionAEditar.tipoSesion === 'corporativa' && { responsable: responsableValue, horasTrabajadas: horasTrabajadasValue, presupuesto: presupuestoValue }),
         };
 
-        if (sesionAEditar.tipoSesion === 'stock') {
-            updates.modelo = modeloValue;
-        } else if (sesionAEditar.tipoSesion === 'corporativa') {
-            updates.responsable = responsableValue;
-            updates.horasTrabajadas = horasTrabajadasValue;
-            updates.presupuesto = presupuestoValue;
-        }
-
-        const { error } = await supabase
-            .from('sesiones_fotograficas')
-            .update(updates)
-            .eq('id', sesionAEditar.id);
-
-        if (error) {
-            console.error('Error al editar la sesión en Supabase:', error);
-        } else {
+        const actualizado = await actualizarSesionEnSupabase(sesionAEditar.id, updates);
+        if (actualizado) {
+            const index = sesiones.findIndex(sesion => sesion.id === sesionAEditar.id);
+            if (index !== -1) {
+                sesiones[index] = { ...sesionAEditar, ...updates };
+                actualizarListaSesiones();
+            }
             ocultarModal(modalEditar);
-            cargarSesiones();
         }
     }
 });
 
 confirmarEliminar.addEventListener('click', async () => {
     if (sesionAEliminar) {
-        const { error } = await supabase
-            .from('sesiones_fotograficas')
-            .delete()
-            .eq('id', sesionAEliminar.id);
-
-        if (error) {
-            console.error('Error al eliminar la sesión de Supabase:', error);
-        } else {
-            sesiones = sesiones.filter(sesion => sesion.id !== sesionAEliminar.id); // Actualizar array local
+        const eliminado = await eliminarSesionDeSupabase(sesionAEliminar.id);
+        if (eliminado) {
+            sesiones = sesiones.filter(sesion => sesion.id !== sesionAEliminar.id);
             actualizarListaSesiones();
             ocultarModal(modalEliminar);
         }
@@ -220,14 +251,8 @@ eliminarTodasSesiones.addEventListener('click', () => {
 });
 
 confirmarEliminarTodas.addEventListener('click', async () => {
-    const { error } = await supabase
-        .from('sesiones_fotograficas')
-        .delete()
-        .neq('id', 0);
-
-    if (error) {
-        console.error('Error al eliminar todas las sesiones de Supabase:', error);
-    } else {
+    const eliminadas = await eliminarTodasLasSesionesDeSupabase();
+    if (eliminadas) {
         sesiones = [];
         actualizarListaSesiones();
         ocultarModal(modalEliminarTodas);
@@ -238,7 +263,7 @@ cancelarEliminarTodas.addEventListener('click', () => {
     ocultarModal(modalEliminarTodas);
 });
 
-tipoSesionSelect.addEventListener('change', actualizarCamposSesion); // Corrección: Usar tipoSesionSelect
+tipoSesion.addEventListener('change', actualizarCamposSesion);
 
 // Cerrar modales
 const cerrarModalEditar = document.querySelector('#modalEditar .cerrar');
@@ -266,4 +291,4 @@ cancelarEditar.addEventListener('click', () => {
 
 // Inicialización
 actualizarCamposSesion();
-cargarSesiones();
+cargarSesionesDesdeSupabase();
